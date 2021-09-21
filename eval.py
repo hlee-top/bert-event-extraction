@@ -19,9 +19,10 @@ def eval(model, iterator, fname):
         for i, batch in enumerate(iterator):
             tokens_x_2d, entities_x_3d, postags_x_2d, triggers_y_2d, arguments_2d, seqlens_1d, head_indexes_2d, words_2d, triggers_2d = batch
 
-            trigger_logits, triggers_y_2d, trigger_hat_2d, argument_hidden, argument_keys = model.module.predict_triggers(tokens_x_2d=tokens_x_2d, entities_x_3d=entities_x_3d,
-                                                                                                                          postags_x_2d=postags_x_2d, head_indexes_2d=head_indexes_2d,
-                                                                                                                          triggers_y_2d=triggers_y_2d, arguments_2d=arguments_2d)
+            trigger_logits, triggers_y_2d, trigger_hat_2d, argument_hidden,argument_keys = \
+                model.module.predict_triggers(tokens_x_2d=tokens_x_2d, entities_x_3d=entities_x_3d,
+                                              postags_x_2d=postags_x_2d, head_indexes_2d=head_indexes_2d,
+                                              triggers_y_2d=triggers_y_2d, arguments_2d=arguments_2d)
 
             words_all.extend(words_2d)
             triggers_all.extend(triggers_2d)
@@ -29,7 +30,8 @@ def eval(model, iterator, fname):
             arguments_all.extend(arguments_2d)
 
             if len(argument_keys) > 0:
-                argument_logits, arguments_y_1d, argument_hat_1d, argument_hat_2d = model.module.predict_arguments(argument_hidden, argument_keys, arguments_2d)
+                argument_logits, arguments_y_1d, argument_hat_1d, argument_hat_2d =\
+                    model.module.predict_arguments(argument_hidden, argument_keys, arguments_2d)
                 arguments_hat_all.extend(argument_hat_2d)
             else:
                 batch_size = len(arguments_2d)

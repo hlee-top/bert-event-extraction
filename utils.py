@@ -2,7 +2,7 @@ import numpy as np
 
 from consts import NONE, PAD
 
-
+# 建立词典
 def build_vocab(labels, BIO_tagging=True):
     all_labels = [PAD, NONE]
     for label in labels:
@@ -17,6 +17,7 @@ def build_vocab(labels, BIO_tagging=True):
     return all_labels, label2idx, idx2label
 
 
+# 计算P,R,F1值
 def calc_metric(y_true, y_pred):
     """
     :param y_true: [(tuple), ...]
@@ -25,33 +26,28 @@ def calc_metric(y_true, y_pred):
     """
     num_proposed = len(y_pred)
     num_gold = len(y_true)
-
     y_true_set = set(y_true)
     num_correct = 0
     for item in y_pred:
         if item in y_true_set:
             num_correct += 1
-
     print('proposed: {}\tcorrect: {}\tgold: {}'.format(num_proposed, num_correct, num_gold))
-
     if num_proposed != 0:
         precision = num_correct / num_proposed
     else:
         precision = 1.0
-
     if num_gold != 0:
         recall = num_correct / num_gold
     else:
         recall = 1.0
-
     if precision + recall != 0:
         f1 = 2 * precision * recall / (precision + recall)
     else:
         f1 = 0
-
     return precision, recall, f1
 
 
+# 从序列中找出触发词
 def find_triggers(labels):
     """
     :param labels: ['B-Conflict:Attack', 'I-Conflict:Attack', 'O', 'B-Life:Marry']

@@ -1,6 +1,7 @@
 import os
 import argparse
 
+## os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,17 +17,26 @@ from eval import eval
 def train(model, iterator, optimizer, criterion):
     model.train()
     for i, batch in enumerate(iterator):
+        print("batch", batch)
         tokens_x_2d, entities_x_3d, postags_x_2d, triggers_y_2d, arguments_2d, seqlens_1d, head_indexes_2d, words_2d, triggers_2d = batch
         optimizer.zero_grad()
-        trigger_logits, triggers_y_2d, trigger_hat_2d, argument_hidden, argument_keys = model.module.predict_triggers(tokens_x_2d=tokens_x_2d, entities_x_3d=entities_x_3d,
-                                                                                                                      postags_x_2d=postags_x_2d, head_indexes_2d=head_indexes_2d,
-                                                                                                                      triggers_y_2d=triggers_y_2d, arguments_2d=arguments_2d)
+        # 参数含义: token的idx列表 实体类型的idx列表 词性的idx列表 句子中token的第一个字词的位置列表 触发词类型的idx列表 论元字典
+        # 其中argument_hidden为论文的隐藏向量(由事件向量和实体向量组成) argument_keys为(触发词+实体)列表
+        trigger_logits, triggers_y_2d, trigger_hat_2d, argument_hidden, argument_keys = \
+            model.module.predict_triggers(tokens_x_2d=tokens_x_2d, entities_x_3d=entities_x_3d,
+                                          postags_x_2d=postags_x_2d, head_indexes_2d=head_indexes_2d,
+                                          triggers_y_2d=triggers_y_2d, arguments_2d=arguments_2d)
 
         trigger_logits = trigger_logits.view(-1, trigger_logits.shape[-1])
+        # 计算触发词loss
         trigger_loss = criterion(trigger_logits, triggers_y_2d.view(-1))
 
+        # 在实体中抽取论元
         if len(argument_keys) > 0:
-            argument_logits, arguments_y_1d, argument_hat_1d, argument_hat_2d = model.module.predict_arguments(argument_hidden, argument_keys, arguments_2d)
+            # argument_hat_2d为事件-论元列表
+            argument_logits, arguments_y_1d, argument_hat_1d, argument_hat_2d = model.module.predict_arguments(
+                argument_hidden, argument_keys, arguments_2d)
+            # 计算论元的loss
             argument_loss = criterion(argument_logits, arguments_y_1d)
             loss = trigger_loss + 2 * argument_loss
             if i == 0:
@@ -61,6 +71,7 @@ def train(model, iterator, optimizer, criterion):
 
 
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=24)
     parser.add_argument("--lr", type=float, default=0.00002)
@@ -75,7 +86,9 @@ if __name__ == "__main__":
 
     hp = parser.parse_args()
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print("begin0")
 
+    # 加载模型
     model = Net(
         device=device,
         trigger_size=len(all_triggers),
@@ -85,14 +98,16 @@ if __name__ == "__main__":
     )
     if device == 'cuda':
         model = model.cuda()
-
+    # 多卡训练
     model = nn.DataParallel(model)
 
     train_dataset = ACE2005Dataset(hp.trainset)
     dev_dataset = ACE2005Dataset(hp.devset)
     test_dataset = ACE2005Dataset(hp.testset)
 
+    # 设置样本权重，无事件1.0,有事件5.0
     samples_weight = train_dataset.get_samples_weight()
+    # 根据权重随机采样
     sampler = torch.utils.data.WeightedRandomSampler(samples_weight, len(samples_weight))
 
     train_iter = data.DataLoader(dataset=train_dataset,
@@ -121,6 +136,7 @@ if __name__ == "__main__":
         os.makedirs(hp.logdir)
 
     for epoch in range(1, hp.n_epochs + 1):
+        # 训练
         train(model, train_iter, optimizer, criterion)
 
         fname = os.path.join(hp.logdir, str(epoch))
@@ -130,9 +146,12 @@ if __name__ == "__main__":
         print(f"=========eval test at epoch={epoch}=========")
         metric_test = eval(model, test_iter, fname + '_test')
 
+        # 把结果发到telegram上
         if hp.telegram_bot_token:
-            report_to_telegram('[epoch {}] dev\n{}'.format(epoch, metric_dev), hp.telegram_bot_token, hp.telegram_chat_id)
-            report_to_telegram('[epoch {}] test\n{}'.format(epoch, metric_test), hp.telegram_bot_token, hp.telegram_chat_id)
-
+            report_to_telegram('[epoch {}] dev\n{}'.format(epoch, metric_dev), hp.telegram_bot_token,
+                               hp.telegram_chat_id)
+            report_to_telegram('[epoch {}] test\n{}'.format(epoch, metric_test), hp.telegram_bot_token,
+                               hp.telegram_chat_id)
+        # 保存模型
         torch.save(model, "latest_model.pt")
         # print(f"weights were saved to {fname}.pt")

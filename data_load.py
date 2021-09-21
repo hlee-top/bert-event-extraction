@@ -25,17 +25,21 @@ class ACE2005Dataset(data.Dataset):
             for item in data:
                 words = item['words']
                 entities = [[NONE] for _ in range(len(words))]
+                # print(entities)
+                # print(np.array(entities).shape)
                 triggers = [NONE] * len(words)
                 postags = item['pos-tags']
                 arguments = {
                     'candidates': [
                         # ex. (5, 6, "entity_type_str"), ...
+                        # 实体为候选论元
                     ],
                     'events': {
                         # ex. (1, 3, "trigger_type_str"): [(5, 6, "argument_role_idx"), ...]
                     },
                 }
 
+                # 实体、触发词使用BIO标注
                 for entity_mention in item['golden-entity-mentions']:
                     arguments['candidates'].append((entity_mention['start'], entity_mention['end'], entity_mention['entity-type']))
 
@@ -67,24 +71,25 @@ class ACE2005Dataset(data.Dataset):
                             role = role.split('-')[0]
                         arguments['events'][event_key].append((argument['start'], argument['end'], argument2idx[role]))
 
-                self.sent_li.append([CLS] + words + [SEP])
-                self.entities_li.append([[PAD]] + entities + [[PAD]])
-                self.postags_li.append([PAD] + postags + [PAD])
-                self.triggers_li.append(triggers)
-                self.arguments_li.append(arguments)
+                self.sent_li.append([CLS] + words + [SEP])  # 句子序列
+                self.entities_li.append([[PAD]] + entities + [[PAD]])  # 实体类型列表(BIO标注)，某项可能有多个类型
+                self.postags_li.append([PAD] + postags + [PAD])  # 词性标注序列
+                self.triggers_li.append(triggers)   # 触发词BIO标注列表
+                self.arguments_li.append(arguments)  # 论元列表包括两项:候选论元(实体)和事件的论元的列表
 
     def __len__(self):
         return len(self.sent_li)
 
+    # 将列表转换为idx
     def __getitem__(self, idx):
-        words, entities, postags, triggers, arguments = self.sent_li[idx], self.entities_li[idx], self.postags_li[idx], self.triggers_li[idx], self.arguments_li[idx]
-
+        words, entities, postags, triggers, arguments = self.sent_li[idx], self.entities_li[idx], \
+                                                    self.postags_li[idx], self.triggers_li[idx], self.arguments_li[idx]
         # We give credits only to the first piece.
         tokens_x, entities_x, postags_x, is_heads = [], [], [], []
         for w, e, p in zip(words, entities, postags):
             tokens = tokenizer.tokenize(w) if w not in [CLS, SEP] else [w]
             tokens_xx = tokenizer.convert_tokens_to_ids(tokens)
-
+            # 乘以(len(tokens) - 1)的原因,一个词可能被分为多个字词
             if w in [CLS, SEP]:
                 is_head = [0]
             else:
@@ -94,17 +99,13 @@ class ACE2005Dataset(data.Dataset):
             e = [e] + [[PAD]] * (len(tokens) - 1)  # <PAD>: no decision
             p = [postag2idx[postag] for postag in p]
             e = [[entity2idx[entity] for entity in entities] for entities in e]
-
             tokens_x.extend(tokens_xx), postags_x.extend(p), entities_x.extend(e), is_heads.extend(is_head)
-
         triggers_y = [trigger2idx[t] for t in triggers]
         head_indexes = []
         for i in range(len(is_heads)):
             if is_heads[i]:
                 head_indexes.append(i)
-
         seqlen = len(tokens_x)
-
         return tokens_x, entities_x, postags_x, triggers_y, arguments, seqlen, head_indexes, words, triggers
 
     def get_samples_weight(self):
@@ -122,8 +123,10 @@ class ACE2005Dataset(data.Dataset):
         return np.array(samples_weight)
 
 
+# 补齐短的序列
 def pad(batch):
-    tokens_x_2d, entities_x_3d, postags_x_2d, triggers_y_2d, arguments_2d, seqlens_1d, head_indexes_2d, words_2d, triggers_2d = list(map(list, zip(*batch)))
+    tokens_x_2d, entities_x_3d, postags_x_2d, triggers_y_2d, arguments_2d, seqlens_1d, \
+                head_indexes_2d, words_2d, triggers_2d = list(map(list, zip(*batch)))
     maxlen = np.array(seqlens_1d).max()
 
     for i in range(len(tokens_x_2d)):
